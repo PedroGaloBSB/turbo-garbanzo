@@ -1,0 +1,26 @@
+# Dependências principais para processamento de PDF
+pymupdf>=1.23.0        # PyMuPDF (fitz) - leitura e manipulação de PDFs
+pdfplumber>=0.10.0     # Extração avançada de texto e tabelas
+pikepdf>=8.0.0         # Manipulação de baixo nível de PDFs
+
+# OCR para PDFs digitalizados/escaneados
+pytesseract>=0.3.10    # Interface para Tesseract OCR
+Pillow>=10.0.0         # Processamento de imagens
+
+# Processamento de texto e limpeza
+regex>=2023.0.0        # Expressões regulares avançadas
+chardet>=5.0.0         # Detecção de encoding de texto
+
+# Exportação para diferentes formatos
+markdown>=3.4.0        # Geração de Markdown
+jsonschema>=4.0.0      # Validação de JSON
+
+# Utilitários
+click>=8.0.0           # CLI interface
+tqdm>=4.65.0           # Barras de progresso
+
+# Desenvolvimento e testes
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
+flake8>=6.0.0
