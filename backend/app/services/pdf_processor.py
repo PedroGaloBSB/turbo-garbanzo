@@ -7,6 +7,7 @@ Lida com qualquer tipo de PDF incluindo:
 - PDFs com JavaScript/embeds maliciosos
 - PDFs com múltiplas camadas
 - PDFs com formulários
+- DOUs, Diários Oficiais e Provas de Concursos (múltiplas colunas)
 """
 
 import os, re, json, logging, hashlib
@@ -14,6 +15,8 @@ from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple
 from datetime import datetime
 import subprocess
+
+from .layout_analyzer import process_pdf_smart
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,7 @@ class PDFProcessor:
                 - extract_tables: bool (default True)
                 - ocr_enabled: bool (default True)
                 - sanitize: bool (default True)
+                - smart_layout: bool (default True) - Detecta DOUs, provas, colunas
                 - output_formats: List[str] (default ['md', 'json'])
         
         Returns:
@@ -58,7 +62,9 @@ class PDFProcessor:
             "images": [],
             "outputs": {},
             "errors": [],
-            "warnings": []
+            "warnings": [],
+            "document_type": "UNKNOWN",
+            "layout_info": {}
         }
         
         try:
@@ -66,16 +72,30 @@ class PDFProcessor:
             if options.get('sanitize', True):
                 self._sanitize_pdf(pdf_path)
             
-            # Extração de metadados
-            result["metadata"] = self._extract_metadata(pdf_path)
+            # Análise Inteligente de Layout (Pré-processamento)
+            if options.get('smart_layout', True):
+                layout_result = process_pdf_smart(pdf_path)
+                result["document_type"] = layout_result.get("document_type", "UNKNOWN")
+                result["layout_info"] = {
+                    "columns": layout_result.get("detected_columns", 1),
+                    "analysis_status": "success"
+                }
+                # Usa texto já estruturado pelo analisador inteligente
+                result["text"] = self._clean_text(layout_result.get("text", ""))
+            else:
+                # Fallback para método tradicional
+                result["metadata"] = self._extract_metadata(pdf_path)
+                result["pages"] = self._count_pages(pdf_path)
+                
+                if options.get('extract_text', True):
+                    text = self._extract_text(pdf_path, options.get('ocr_enabled', True))
+                    result["text"] = self._clean_text(text)
             
-            # Contagem de páginas
-            result["pages"] = self._count_pages(pdf_path)
-            
-            # Extração de texto
-            if options.get('extract_text', True):
-                text = self._extract_text(pdf_path, options.get('ocr_enabled', True))
-                result["text"] = self._clean_text(text)
+            # Atualiza metadados e páginas se não veio do layout analyzer
+            if not result["pages"]:
+                result["pages"] = self._count_pages(pdf_path)
+            if not result["metadata"]:
+                result["metadata"] = self._extract_metadata(pdf_path)
             
             # Extração de tabelas
             if options.get('extract_tables', True):
