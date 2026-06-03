@@ -66,9 +66,7 @@ class MarkdownExporter(BaseExporter):
         # Conteúdo principal
         lines.append("## Conteúdo\n")
         
-        from ...core.cleaner import DocumentCleaner
-        cleaner = DocumentCleaner(document)
-        text = cleaner.clean()
+        text = document.extract_text(method="fitz")
         
         # Divide por páginas (aproximado)
         pages_text = text.split('\n\n')
@@ -85,6 +83,8 @@ class MarkdownExporter(BaseExporter):
         
         # Tabelas
         if extract_tables:
+            from ..core.cleaner import DocumentCleaner
+            cleaner = DocumentCleaner(document)
             tables = cleaner.extract_tables()
             if tables:
                 lines.append("\n## Tabelas\n")
@@ -125,8 +125,6 @@ class JSONExporter(BaseExporter):
             include_tables: Incluir tabelas extraídas
             include_images_info: Incluir informações das imagens
         """
-        from .core.cleaner import DocumentCleaner
-        
         data = {}
         
         # Metadados
@@ -136,14 +134,15 @@ class JSONExporter(BaseExporter):
         
         # Texto limpo
         if include_text:
-            from ...core.cleaner import DocumentCleaner
-            cleaner = DocumentCleaner(document)
-            data["text"] = cleaner.clean()
+            text = document.extract_text(method="fitz")
+            data["text"] = text
             data["word_count"] = len(data["text"].split())
             data["char_count"] = len(data["text"])
         
         # Tabelas
         if include_tables:
+            from ..core.cleaner import DocumentCleaner
+            cleaner = DocumentCleaner(document)
             data["tables"] = cleaner.extract_tables()
         
         # Informações de imagens
@@ -185,10 +184,7 @@ class HTMLExporter(BaseExporter):
             output_path: Caminho de saída
             include_css: Incluir CSS básico para estilização
         """
-        from ...core.cleaner import DocumentCleaner
-        
-        cleaner = DocumentCleaner(document)
-        text = cleaner.clean()
+        text = document.extract_text(method="fitz")
         
         # Converte quebras de linha em parágrafos
         paragraphs = text.split('\n\n')
@@ -199,26 +195,29 @@ class HTMLExporter(BaseExporter):
                 html_content += f"<p>{para.strip()}</p>\n"
         
         # Tabelas
-        tables = cleaner.extract_tables()
-        if tables:
-            for table in tables:
-                if table:
-                    html_content += "<table>\n"
-                    # Header
-                    html_content += "<thead><tr>"
-                    for cell in table[0]:
-                        html_content += f"<th>{cell or ''}</th>"
-                    html_content += "</tr></thead>\n"
-                    
-                    # Body
-                    html_content += "<tbody>\n"
-                    for row in table[1:]:
-                        html_content += "<tr>"
-                        for cell in row:
-                            html_content += f"<td>{cell or ''}</td>"
-                        html_content += "</tr>\n"
-                    html_content += "</tbody>\n"
-                    html_content += "</table>\n"
+        if include_tables:
+            from ..core.cleaner import DocumentCleaner
+            cleaner = DocumentCleaner(document)
+            tables = cleaner.extract_tables()
+            if tables:
+                for table in tables:
+                    if table:
+                        html_content += "<table>\n"
+                        # Header
+                        html_content += "<thead><tr>"
+                        for cell in table[0]:
+                            html_content += f"<th>{cell or ''}</th>"
+                        html_content += "</tr></thead>\n"
+                        
+                        # Body
+                        html_content += "<tbody>\n"
+                        for row in table[1:]:
+                            html_content += "<tr>"
+                            for cell in row:
+                                html_content += f"<td>{cell or ''}</td>"
+                            html_content += "</tr>\n"
+                        html_content += "</tbody>\n"
+                        html_content += "</table>\n"
         
         css = """
         <style>

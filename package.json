@@ -1,0 +1,24 @@
+{
+  "name": "pdfforge",
+  "version": "1.0.0",
+  "description": "Ferramenta opensource para manipulação de PDFs com frontend moderno e integração Google Drive",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python main.py",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && pip install -r requirements.txt"
+  },
+  "keywords": [
+    "pdf",
+    "markdown",
+    "json",
+    "google-drive",
+    "opensource"
+  ],
+  "author": "PDFForge Community",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pdfforge/pdfforge"
+  }
+}

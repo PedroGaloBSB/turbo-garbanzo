@@ -212,7 +212,7 @@ class DocumentCleaner:
         Returns:
             Dicionário com dados estruturados
         """
-        text = self.clean()
+        text = self.document.extract_text(method="fitz")
         
         # Extrai informações básicas
         data = {
