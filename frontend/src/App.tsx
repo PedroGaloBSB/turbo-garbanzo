@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { Upload, FileText, Download, LogOut, CheckCircle, Loader, AlertCircle } from 'lucide-react'
+import { Upload, FileText, Download, LogOut, CheckCircle, Loader, AlertCircle, User, Lock, Unlock } from 'lucide-react'
 import './App.css'
 
 const API_BASE_URL = 'http://localhost:8000/api'
@@ -18,6 +18,8 @@ interface ProcessedFile {
   formats?: string[]
   downloadUrls?: Record<string, string>
   error?: string
+  isAnonymous?: boolean
+  taskId?: string
 }
 
 function App() {
@@ -25,14 +27,15 @@ function App() {
   const [files, setFiles] = useState<ProcessedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFormats, setSelectedFormats] = useState<string[]>(['md', 'json'])
+  const [useOcr, setUseOcr] = useState(false)
 
   const handleGoogleLogin = () => {
-    window.location.href = `${API_BASE_URL}/auth/google`
+    window.location.href = `${API_BASE_URL}/auth/google/url`
   }
 
   const handleLogout = () => {
     setUser(null)
-    setFiles([])
+    // Keep files but they become anonymous-like (no drive sync)
   }
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -49,17 +52,16 @@ function App() {
     e.preventDefault()
     setIsDragging(false)
     
-    if (!user) return
-    
+    // Allow upload even without user (anonymous mode)
     const droppedFiles = Array.from(e.dataTransfer.files).filter(
       file => file.type === 'application/pdf'
     )
     
     await uploadFiles(droppedFiles)
-  }, [user])
+  }, []) // Removed user dependency - allow anonymous uploads
 
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!user || !e.target.files) return
+    if (!e.target.files) return
     
     const selectedFiles = Array.from(e.target.files).filter(
       file => file.type === 'application/pdf'
@@ -72,7 +74,8 @@ function App() {
     const newFiles: ProcessedFile[] = pdfFiles.map(file => ({
       id: Math.random().toString(36).substr(2, 9),
       filename: file.name,
-      status: 'pending'
+      status: 'pending',
+      isAnonymous: !user
     }))
     
     setFiles(prev => [...prev, ...newFiles])
@@ -86,17 +89,21 @@ function App() {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('formats', selectedFormats.join(','))
+    formData.append('use_ocr', useOcr.toString())
     
     try {
       setFiles(prev => prev.map(f => 
         f.filename === file.name ? { ...f, status: 'processing' } : f
       ))
       
-      const response = await fetch(`${API_BASE_URL}/process`, {
+      const headers: HeadersInit = {}
+      if (user) {
+        headers['Authorization'] = `Bearer ${user.id}`
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/upload`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${user?.id}`
-        },
+        headers,
         body: formData
       })
       
@@ -108,8 +115,13 @@ function App() {
         f.filename === file.name ? { 
           ...f, 
           status: 'completed',
+          taskId: result.task_id,
+          isAnonymous: result.is_anonymous,
           formats: result.formats,
-          downloadUrls: result.downloadUrls
+          downloadUrls: result.formats.reduce((acc, fmt: string) => {
+            acc[fmt] = `${API_BASE_URL}/download/${result.task_id}/${fmt}`
+            return acc
+          }, {} as Record<string, string>)
         } : f
       ))
     } catch (error) {
@@ -222,7 +234,29 @@ function App() {
                 </label>
               ))}
             </div>
+            
+            <div className="ocr-option">
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={useOcr}
+                  onChange={(e) => setUseOcr(e.target.checked)}
+                />
+                <span className="toggle-text">🔍 Ativar OCR (para PDFs digitalizados)</span>
+              </label>
+            </div>
           </div>
+          
+          {!user && (
+            <div className="anonymous-warning">
+              <Unlock size={20} />
+              <p><strong>Modo Visitante:</strong> Seus arquivos serão automaticamente excluídos após o download.</p>
+              <button onClick={handleGoogleLogin} className="login-small-btn">
+                <User size={16} />
+                Entrar para salvar no Google Drive
+              </button>
+            </div>
+          )}
         </div>
 
         {files.length > 0 && (
@@ -234,6 +268,11 @@ function App() {
                   <div className="file-info">
                     {getStatusIcon(file.status)}
                     <span className="filename">{file.filename}</span>
+                    {file.isAnonymous && (
+                      <span className="anon-badge" title="Será excluído após download">
+                        <Lock size={14} /> Anônimo
+                      </span>
+                    )}
                   </div>
                   
                   {file.status === 'completed' && file.downloadUrls && (
@@ -244,9 +283,11 @@ function App() {
                           href={url} 
                           className="download-btn"
                           download
+                          title={file.isAnonymous ? "Arquivo será excluído após este download" : ""}
                         >
                           <Download size={16} />
                           {format.toUpperCase()}
+                          {file.isAnonymous && <span className="download-warning">⚠️</span>}
                         </a>
                       ))}
                     </div>

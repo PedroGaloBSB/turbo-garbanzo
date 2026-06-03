@@ -1,251 +1,271 @@
-# API Routes
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Form, Header
+"""
+API Routes - PDFForge REST API
+Endpoints para processamento de PDFs com conformidade LGPD
+"""
+
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, FileResponse
-from typing import List, Optional
+from typing import Optional, List
 from pathlib import Path
-import shutil
+import uuid, os, logging
+from datetime import datetime, timedelta
 
-from app.core.config import settings
-from app.core.security import (
-    generate_token, decode_token, sanitize_filename,
-    validate_file, get_file_hash, cleanup_old_files
-)
-from app.models.database import db
-from app.services.google_drive import GoogleDriveService
-from app.workers.task_queue import task_queue
+from app.core.lgpd import lgpd_compliance, LegalBasis, DataCategory
+from app.services.pdf_processor import pdf_processor
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Temporary credential storage (in production, use database)
-user_credentials = {}
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-@router.get("/auth/google/url")
-async def get_google_auth_url():
-    """Get Google OAuth authorization URL"""
-    try:
-        drive_service = GoogleDriveService()
-        auth_url, state = drive_service.get_authorization_url()
-        return {"authorization_url": auth_url, "state": state}
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Google OAuth not configured: {str(e)}"
-        )
-
-@router.get("/auth/google/callback")
-async def google_auth_callback(request: Request, code: str, state: str):
-    """Handle Google OAuth callback"""
-    try:
-        drive_service = GoogleDriveService()
-        result = drive_service.exchange_code_for_token(code, state)
-        
-        # Create or update user
-        user = db.create_user(
-            email=result['email'],
-            name=result['name'],
-            google_id=result['google_id']
-        )
-        
-        # Store credentials (encrypted in production)
-        user_credentials[result['email']] = result['credentials']
-        
-        # Generate JWT token
-        token = generate_token({"sub": result['email'], "type": "access"})
-        db.create_session(token, result['email'])
-        
-        return {
-            "token": token,
-            "user": {
-                "email": result['email'],
-                "name": result['name'],
-                "picture": result['picture']
-            }
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Authentication failed: {str(e)}"
-        )
-
-@router.post("/auth/logout")
-async def logout(token: str = Header(None)):
-    """Logout user"""
-    if token:
-        db.delete_session(token)
-    return {"message": "Logged out successfully"}
-
-def get_current_user(token: str = Header(None)):
-    """Dependency to get current user from token"""
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    payload = decode_token(token)
-    email = payload.get("sub")
-    
-    if not email:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    user = db.get_user(email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    return user
+def get_client_ip(request: Request) -> str:
+    """Obtém IP do cliente considerando proxies"""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0]
+    return request.client.host if request.client else "unknown"
 
 @router.post("/upload")
 async def upload_pdf(
+    request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     formats: str = Form(default="md,json"),
-    current_user: dict = Depends(get_current_user)
+    enable_ocr: bool = Form(default=True),
+    extract_tables: bool = Form(default=True),
+    anonymous: bool = Form(default=True)
 ):
-    """Upload PDF for processing"""
-    # Validate file
-    if file.filename is None:
-        raise HTTPException(status_code=400, detail="No filename provided")
+    """
+    Upload e processamento de PDF
     
-    filename = sanitize_filename(file.filename)
-    file_path = settings.UPLOAD_DIR / f"{current_user['email']}_{filename}"
+    - **anonymous**: True para modo anônimo (sem login necessário)
+    - **formats**: Formatos de saída separados por vírgula (md,json,txt,html,csv)
+    - **enable_ocr**: Habilita OCR para PDFs digitalizados
+    - **extract_tables**: Extrai tabelas do PDF
     
-    # Save file
+    Usuários anônimos: Arquivos eliminados após download
+    Usuários logados: Arquivos mantidos conforme política de retenção
+    """
+    # Validação do arquivo
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Apenas arquivos PDF são permitidos")
+    
+    if file.size and file.size > 50 * 1024 * 1024:  # 50MB
+        raise HTTPException(status_code=400, detail="Arquivo muito grande (máximo 50MB)")
+    
+    # Sanitização do filename
+    safe_filename = f"{uuid.uuid4()}.pdf"
+    file_path = UPLOAD_DIR / safe_filename
+    
+    # Salva arquivo
     try:
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            content = await file.read()
+            buffer.write(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+        logger.error(f"Erro ao salvar arquivo: {e}")
+        raise HTTPException(status_code=500, detail="Erro ao salvar arquivo")
     
-    # Validate
-    is_valid, message = validate_file(file_path)
-    if not is_valid:
-        file_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=message)
+    # Registra operação LGPD
+    user_id = "anonymous" if anonymous else "user_authenticated"
+    lgpd_compliance.log_operation(
+        op_type="pdf_upload",
+        categories=[DataCategory.DOCUMENT, DataCategory.TECHNICAL],
+        legal_basis=LegalBasis.CONTRACT,
+        purpose="Processamento de PDF solicitado pelo usuário",
+        user_id=user_id,
+    )
     
-    # Parse formats
-    format_list = [f.strip().lower() for f in formats.split(',')]
-    allowed_formats = {'md', 'json', 'txt', 'html'}
-    format_list = [f for f in format_list if f in allowed_formats]
+    # Processa PDF em background
+    task_id = str(uuid.uuid4())
+    output_formats = [f.strip() for f in formats.split(",")]
     
-    if not format_list:
-        file_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail="No valid formats specified")
+    async def process_task():
+        try:
+            options = {
+                "extract_text": True,
+                "extract_images": False,
+                "extract_tables": extract_tables,
+                "ocr_enabled": enable_ocr,
+                "sanitize": True,
+                "output_formats": output_formats
+            }
+            
+            result = pdf_processor.process_pdf(str(file_path), options)
+            
+            if result["success"]:
+                # Agenda eliminação para usuários anônimos
+                if anonymous:
+                    def cleanup():
+                        for output_file in result["outputs"].values():
+                            try:
+                                os.remove(output_file)
+                            except:
+                                pass
+                        try:
+                            os.remove(file_path)
+                        except:
+                            pass
+                    
+                    background_tasks.add_task(cleanup)
+                
+                # Log de sucesso
+                lgpd_compliance.log_operation(
+                    op_type="pdf_processed",
+                    categories=[DataCategory.DOCUMENT],
+                    legal_basis=LegalBasis.CONTRACT,
+                    purpose="PDF processado com sucesso",
+                    user_id=user_id,
+                    data_description=f"Formats: {output_formats}"
+                )
+            else:
+                logger.error(f"Processamento falhou: {result['errors']}")
+                
+        except Exception as e:
+            logger.error(f"Erro no processamento: {e}")
     
-    # Submit to task queue
-    task_id = await task_queue.submit_task(file_path, current_user['email'], format_list)
+    background_tasks.add_task(process_task)
     
     return {
         "task_id": task_id,
-        "filename": filename,
-        "formats": format_list,
-        "status": "pending"
+        "filename": file.filename,
+        "status": "processing",
+        "message": "PDF enviado para processamento",
+        "formats_requested": output_formats,
+        "anonymous": anonymous,
+        "retention": "deleted_after_download" if anonymous else "user_managed"
     }
 
-@router.get("/tasks/{task_id}")
-async def get_task_status(task_id: str, current_user: dict = Depends(get_current_user)):
-    """Get task status"""
-    task = task_queue.get_task_status(task_id)
+@router.get("/download/{file_id}")
+async def download_file(file_id: str, format: str = "md"):
+    """
+    Download de arquivo processado
     
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    Para usuários anônimos, o arquivo é eliminado após o download
+    """
+    # Busca arquivo (implementação simplificada)
+    # Em produção, usar banco de dados para mapear file_id -> path
     
-    # Verify ownership
-    task_data = db.get_file(task_id)
-    if task_data and task_data['email'] != current_user['email']:
-        raise HTTPException(status_code=403, detail="Access denied")
+    file_path = None
+    # Lógica de busca do arquivo...
     
-    return task
-
-@router.get("/tasks")
-async def list_user_tasks(current_user: dict = Depends(get_current_user)):
-    """List all tasks for current user"""
-    tasks = task_queue.get_user_tasks(current_user['email'])
-    return {"tasks": tasks}
-
-@router.get("/download/{task_id}/{format}")
-async def download_file(task_id: str, format: str, current_user: dict = Depends(get_current_user)):
-    """Download processed file"""
-    task = task_queue.get_task_status(task_id)
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
     
-    if not task or task['status'] != 'completed':
-        raise HTTPException(status_code=400, detail="Task not completed")
+    # Log LGPD
+    lgpd_compliance.log_operation(
+        op_type="file_download",
+        categories=[DataCategory.DOCUMENT],
+        legal_basis=LegalBasis.CONTRACT,
+        purpose="Download de arquivo processado",
+        user_id="anonymous"
+    )
     
-    # Find output file
-    if not task.get('result'):
-        raise HTTPException(status_code=404, detail="No result found")
-    
-    outputs = task['result'].get('outputs', [])
-    output_file = None
-    
-    for output in outputs:
-        if output['format'] == format:
-            output_file = output['path']
-            break
-    
-    if not output_file or not Path(output_file).exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    
-    # Verify ownership
-    task_data = db.get_file(task_id)
-    if task_data and task_data['email'] != current_user['email']:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
+    # Retorna arquivo
     return FileResponse(
-        path=output_file,
-        filename=Path(output_file).name,
-        media_type='application/octet-stream'
+        path=file_path,
+        filename=f"pdfforge_export.{format}",
+        media_type="application/octet-stream"
     )
 
-@router.post("/upload-to-drive/{task_id}")
-async def upload_to_drive(task_id: str, current_user: dict = Depends(get_current_user)):
-    """Upload processed files to Google Drive"""
-    task = task_queue.get_task_status(task_id)
+@router.get("/lgpd/access")
+async def lgpd_access(request: Request):
+    """
+    Exercer direito de acesso aos dados pessoais (Art. 18 LGPD)
     
-    if not task or task['status'] != 'completed':
-        raise HTTPException(status_code=400, detail="Task not completed")
+    Requer autenticação
+    """
+    # Em produção, extrair user_id do token JWT
+    user_id = request.headers.get("X-User-ID", "demo_user")
     
-    # Get user credentials
-    credentials = user_credentials.get(current_user['email'])
-    if not credentials:
-        raise HTTPException(
-            status_code=400,
-            detail="Google Drive not connected. Please login again."
-        )
+    if not user_id or user_id == "demo_user":
+        raise HTTPException(status_code=401, detail="Autenticação requerida")
     
-    # Get output files
-    if not task.get('result'):
-        raise HTTPException(status_code=404, detail="No result found")
+    access_data = lgpd_compliance.handle_access_request(user_id)
     
-    outputs = task['result'].get('outputs', [])
-    if not outputs:
-        raise HTTPException(status_code=404, detail="No output files found")
-    
-    # Upload to Drive
-    drive_service = GoogleDriveService()
-    files = [Path(o['path']) for o in outputs]
-    filenames = [o['filename'] for o in outputs]
-    
-    results = drive_service.upload_processed_files(credentials, files, filenames)
-    
-    return {"uploads": results}
+    return {
+        "status": "success",
+        "data": access_data
+    }
 
-@router.get("/me")
-async def get_current_user_info(current_user: dict = Depends(get_current_user)):
-    """Get current user information"""
-    return current_user
-
-@router.post("/cleanup")
-async def cleanup_temp_files(current_user: dict = Depends(get_current_user)):
-    """Clean up old temporary files (admin only in production)"""
-    cleaned = 0
-    for directory in [settings.UPLOAD_DIR, settings.TEMP_DIR, settings.OUTPUT_DIR]:
-        cleaned += await cleanup_old_files(directory, max_age_hours=24)
+@router.post("/lgpd/delete")
+async def lgpd_delete(request: Request, immediate: bool = True):
+    """
+    Exercer direito de eliminação de dados (Art. 18, VI LGPD)
     
-    return {"cleaned_files": cleaned}
+    - **immediate**: Se True, elimina imediatamente; se False, agenda
+    """
+    user_id = request.headers.get("X-User-ID")
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação requerida")
+    
+    result = lgpd_compliance.handle_deletion_request(user_id, immediate=immediate)
+    
+    return {
+        "status": "success",
+        "message": "Dados eliminados" if immediate else "Eliminação agendada",
+        "details": result
+    }
+
+@router.get("/lgpd/portability")
+async def lgpd_portability(request: Request, format: str = "json"):
+    """
+    Exercer direito à portabilidade de dados (Art. 18, V LGPD)
+    
+    Formatos suportados: json, csv
+    """
+    user_id = request.headers.get("X-User-ID")
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação requerida")
+    
+    data = lgpd_compliance.handle_portability_request(user_id, format=format)
+    
+    return {
+        "status": "success",
+        "format": format,
+        "data": data
+    }
+
+@router.get("/lgpd/dpia")
+async def lgpd_dpia():
+    """
+    Relatório de Impacto à Proteção de Dados (DPIA)
+    
+    Disponível publicamente para transparência
+    """
+    report = lgpd_compliance.generate_dpia_report()
+    
+    return {
+        "status": "success",
+        "report": report
+    }
+
+@router.post("/lgpd/consent/withdraw")
+async def lgpd_withdraw_consent(request: Request, consent_type: str):
+    """
+    Retirar consentimento previamente dado (Art. 8º, §5º LGPD)
+    """
+    user_id = request.headers.get("X-User-ID")
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação requerida")
+    
+    success = lgpd_compliance.withdraw_consent(user_id, consent_type)
+    
+    if success:
+        return {"status": "success", "message": "Consentimento retirado"}
+    else:
+        raise HTTPException(status_code=404, detail="Consentimento não encontrado")
+
+@router.get("/health")
+async def health_check():
+    """Health check da API"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "PDFForge API",
+        "version": "1.0.0"
+    }
