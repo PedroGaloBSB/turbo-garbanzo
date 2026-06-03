@@ -1,0 +1,62 @@
+# Docker Compose for PDFForge
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pdfforge-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/google/callback
+      - OCR_ENABLED=True
+      - MAX_CONCURRENT_TASKS=5
+      - RATE_LIMIT_PER_MINUTE=10
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/outputs:/app/outputs
+      - ./backend/temp:/app/temp
+      - ./backend/data:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - pdfforge-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pdfforge-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - pdfforge-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: pdfforge-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - pdfforge-network
+
+volumes:
+  redis-data:
+
+networks:
+  pdfforge-network:
+    driver: bridge

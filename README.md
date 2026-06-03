@@ -1,215 +1,214 @@
-# PDFForge 🚀
+# PDFForge - Advanced PDF Processing Platform
 
-**Ferramenta opensource para manipulação de PDFs com frontend moderno e integração Google Drive**
+## 🚀 Version 2.0 - Enterprise Ready
 
-## Visão Geral
+PDFForge é uma ferramenta opensource completa para manipulação de PDFs com autenticação Google, processamento assíncrono, OCR integrado e upload para Google Drive.
 
-PDFForge é uma ferramenta completa e gratuita para processamento de arquivos PDF, desenvolvida pela comunidade e para a comunidade. Com ela, você pode extrair texto, limpar dados, converter para múltiplos formatos e integrar diretamente com seu Google Drive.
+### ✨ Novas Funcionalidades (v2.0)
 
-## ✨ Funcionalidades Principais
+#### 🔐 Segurança Avançada
+- **Sanitização de PDFs**: Remove conteúdo malicioso automaticamente
+- **Rate Limiting**: Proteção contra sobrecarga (10 req/min por padrão)
+- **JWT Authentication**: Tokens seguros com expiração
+- **Validação de Arquivos**: Verificação de tipo, tamanho e integridade
+- **Limpeza Automática**: Remoção de arquivos temporários após 24h
+- **Criptografia**: Dados sensíveis criptografados com Fernet
 
-### Core de Processamento
-- ✅ Extração de texto de qualquer tipo de PDF
-- ✅ Limpeza e normalização de dados (remoção de hífens, espaços extras, etc.)
-- ✅ Extração de imagens e tabelas
-- ✅ OCR para PDFs escaneados (configuração opcional)
-- ✅ Extração de dados estruturados (emails, telefones, datas)
+#### ⚡ Processamento Assíncrono
+- **Task Queue**: Filas de processamento com workers múltiplos
+- **Progresso em Tempo Real**: Acompanhamento do status de cada tarefa
+- **Concorrência Controlada**: Máximo de 5 tarefas simultâneas (configurável)
+- **Timeout Protection**: Prevenção contra tarefas travadas
 
-### Formatos de Exportação
-- 📄 **Markdown (.md)** - Ideal para documentação
-- 📊 **JSON (.json)** - Perfeito para integração com APIs
-- 📝 **Texto (.txt)** - Formato universal
-- 🌐 **HTML (.html)** - Para web e visualização
+#### 📝 OCR Integrado
+- **Tesseract OCR**: Extração de texto de PDFs digitalizados
+- **Multi-idioma**: Português e Inglês configuráveis
+- **Fallback Inteligente**: Tenta extração normal primeiro, usa OCR se necessário
+- **Qualidade Ajustável**: Zoom 2x para melhor precisão
 
-### Frontend Moderno
-- 🔐 Login com Google OAuth 2.0
-- 📤 Upload via drag & drop
-- ⚡ Processamento em tempo real com feedback visual
-- 📱 Interface responsiva e moderna
-- 🎨 Design elegante com gradientes e animações
+#### 🌐 Integração Google
+- **OAuth 2.0**: Login seguro com Google
+- **Google Drive**: Upload automático dos arquivos processados
+- **Perfil do Usuário**: Nome, email e foto integrados
+- **Credenciais Seguras**: Armazenamento criptografado
 
-### Integração Google Drive
-- 💾 Envio automático de arquivos processados para seu Google Drive
-- 📁 Organização em pastas
-- 🔒 Autenticação segura via OAuth
+#### 🏗️ Arquitetura Moderna
+- **Backend**: FastAPI + AsyncIO
+- **Frontend**: React + TypeScript + Vite
+- **Banco de Dados**: SQLite (async) - fácil migração para PostgreSQL
+- **Cache**: Redis opcional para produção
+- **Docker**: Containers prontos para deploy
 
-## 🏗️ Arquitetura do Projeto
+### 📁 Estrutura do Projeto
 
 ```
-pdfforge/
-├── pdfforge/           # Core da biblioteca Python
-│   ├── core/          # Document, Extractor, Cleaner
-│   ├── formats/       # Exportadores (MD, JSON, HTML, TXT)
-│   └── utils/         # Utilitários e processamento em lote
-├── frontend/          # Aplicação React + TypeScript
+/workspace/
+├── backend/
+│   ├── app/
+│   │   ├── api/          # Rotas da API
+│   │   ├── core/         # Configuração e segurança
+│   │   ├── models/       # Modelos de dados
+│   │   ├── services/     # Serviços (OCR, Drive, Sanitizer)
+│   │   └── workers/      # Task queue e processamento
+│   ├── uploads/          # Arquivos recebidos
+│   ├── outputs/          # Arquivos processados
+│   ├── temp/             # Arquivos temporários
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
 │   ├── src/
-│   │   ├── App.tsx    # Componente principal
-│   │   └── ...
+│   │   ├── App.tsx       # Componente principal
+│   │   ├── App.css       # Estilos
+│   │   └── main.tsx      # Entry point
+│   ├── Dockerfile
+│   ├── nginx.conf
 │   └── package.json
-├── backend/           # API FastAPI
-│   ├── main.py        # Servidor e endpoints
-│   └── requirements.txt
-├── examples/          # Exemplos de uso
-└── tests/             # Testes automatizados
+├── docker/
+│   └── docker-compose.yml
+├── pdfforge/             # Core library
+├── LICENSE               # MIT License
+├── README.md
+└── ROADMAP.md
 ```
 
-## 🚀 Quick Start
+### 🚀 Instalação Rápida
 
-### Pré-requisitos
-- Python 3.9+
-- Node.js 18+
-- npm ou yarn
+#### Opção 1: Docker (Recomendado)
 
-### 1. Clone o repositório
 ```bash
-git clone https://github.com/pdfforge/pdfforge.git
+# 1. Clone o repositório
+git clone https://github.com/seu-usuario/pdfforge.git
 cd pdfforge
+
+# 2. Configure as variáveis de ambiente
+cp backend/.env.example backend/.env
+# Edite backend/.env com suas credenciais do Google
+
+# 3. Inicie com Docker Compose
+docker-compose -f docker/docker-compose.yml up -d
+
+# 4. Acesse
+# Frontend: http://localhost:3000
+# Backend: http://localhost:8000
+# API Docs: http://localhost:8000/docs
 ```
 
-### 2. Instale as dependências
+#### Opção 2: Manual
 
-#### Backend (Python)
+**Backend:**
 ```bash
 cd backend
+
+# Instale dependências do sistema (Ubuntu/Debian)
+sudo apt-get install tesseract-ocr tesseract-ocr-por tesseract-ocr-eng qpdf
+
+# Crie ambiente virtual
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# ou venv\Scripts\activate  # Windows
+
+# Instale dependências Python
 pip install -r requirements.txt
+
+# Configure variáveis de ambiente
+cp .env.example .env
+# Edite .env com suas credenciais
+
+# Execute
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-#### Frontend (Node.js)
+**Frontend:**
 ```bash
 cd frontend
+
+# Instale dependências
 npm install
+
+# Execute em modo desenvolvimento
+npm run dev
+
+# Ou build para produção
+npm run build
 ```
 
-### 3. Configure o Google OAuth (opcional para integração com Drive)
+### 🔐 Configuração do Google OAuth
 
 1. Acesse [Google Cloud Console](https://console.cloud.google.com/)
-2. Crie um projeto e ative as APIs: Google Drive API e Google OAuth2
-3. Crie credenciais OAuth 2.0 (Web application)
-4. Adicione redirect URI: `http://localhost:8000/api/auth/google/callback`
-5. Baixe o `client_secret.json` e coloque na pasta `/backend`
+2. Crie um novo projeto
+3. Ative as APIs:
+   - Google Drive API
+   - Google+ API
+4. Vá para "Credentials" → "Create Credentials" → "OAuth 2.0 Client ID"
+5. Configure:
+   - Application type: Web application
+   - Authorized redirect URIs: `http://localhost:8000/api/auth/google/callback`
+6. Copie Client ID e Client Secret para o arquivo `.env`
 
-### 4. Execute a aplicação
+### 📊 Endpoints da API
 
-#### Opção A: Separadamente
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| GET | `/api/auth/google/url` | URL de autenticação Google |
+| GET | `/api/auth/google/callback` | Callback OAuth |
+| POST | `/api/auth/logout` | Logout |
+| POST | `/api/upload` | Upload de PDF |
+| GET | `/api/tasks` | Listar tarefas |
+| GET | `/api/tasks/{id}` | Status da tarefa |
+| GET | `/api/download/{task_id}/{format}` | Download |
+| POST | `/api/upload-to-drive/{task_id}` | Upload para Drive |
+| GET | `/api/me` | Info do usuário |
+| GET | `/health` | Health check |
 
-Terminal 1 - Backend:
-```bash
-cd backend
-python main.py
-```
+### 🔒 Recursos de Segurança Implementados
 
-Terminal 2 - Frontend:
-```bash
-cd frontend
-npm run dev
-```
+1. **Sanitização de PDF**
+   - Remove JavaScript embutido
+   - Remove anexos maliciosos
+   - Re-renderiza o PDF para limpar exploits
 
-#### Opção B: Juntos (requer `concurrently`)
-```bash
-npm install -g concurrently
-npm run dev
-```
+2. **Proteção de Upload**
+   - Validação de extensão (.pdf apenas)
+   - Limite de tamanho (50MB padrão)
+   - Sanitização de filename
+   - Hash SHA256 para integridade
 
-### 5. Acesse
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+3. **Rate Limiting**
+   - 10 requisições por minuto por IP
+   - Headers de retry-after
+   - Proteção contra DDoS
 
-## 💻 Uso via CLI
+4. **Autenticação**
+   - JWT tokens com expiração
+   - Refresh tokens (Google)
+   - Validação de sessão
 
-A ferramenta também possui interface de linha de comando:
+5. **Isolamento**
+   - Diretórios separados por usuário
+   - Cleanup automático (24h)
+   - Permissões restritas
 
-```bash
-# Extrair texto para Markdown
-python -m pdfforge input.pdf --output output.md
+### 🎯 Próximos Passos (Roadmap)
 
-# Extrair para JSON com limpeza
-python -m pdfforge input.pdf --format json --clean
+- [ ] Testes automatizados (pytest + Jest)
+- [ ] Migração para PostgreSQL
+- [ ] WebSocket para updates em tempo real
+- [ ] Editor de PDF pré-processamento
+- [ ] Pipelines customizáveis
+- [ ] API pública com rate limiting diferenciado
+- [ ] Documentação Swagger completa
+- [ ] CI/CD com GitHub Actions
+- [ ] Helm charts para Kubernetes
 
-# Processar múltiplos arquivos
-python -m pdfforge *.pdf --batch --output-dir ./converted
+### 📝 Licença
 
-# Extrair emails e telefones
-python -m pdfforge input.pdf --extract-entities
-```
+MIT License - Livre para uso comercial e modificações.
 
-## 📖 Exemplo de Código Python
+### 🤝 Contribuindo
 
-```python
-from pdfforge.core import PDFDocument, PDFExtractor, PDFCleaner
-from pdfforge.formats import MarkdownFormatter, JSONFormatter
-
-# Carregar PDF
-doc = PDFDocument('documento.pdf')
-
-# Extrair texto
-extractor = PDFExtractor(doc)
-text = extractor.extract_text()
-
-# Limpar texto
-cleaner = PDFCleaner()
-clean_text = cleaner.clean(text)
-
-# Exportar para Markdown
-md_formatter = MarkdownFormatter()
-markdown = md_formatter.format(clean_text)
-
-# Exportar para JSON
-json_formatter = JSONFormatter()
-json_data = json_formatter.format({
-    'content': clean_text,
-    'metadata': doc.metadata
-})
-```
-
-## 🛠️ Tecnologias Utilizadas
-
-### Backend
-- **FastAPI** - Framework web moderno e rápido
-- **PyPDF2 / pdfplumber** - Manipulação de PDFs
-- **google-api-python-client** - Integração Google Drive
-- **OAuth 2.0** - Autenticação segura
-
-### Frontend
-- **React 18** - Biblioteca UI
-- **TypeScript** - Tipagem estática
-- **Vite** - Build tool ultra-rápida
-- **Lucide Icons** - Ícones modernos
-- **CSS Modules** - Estilização
-
-## 📄 Licença
-
-Este projeto está sob a licença **MIT** - veja o arquivo [LICENSE](LICENSE) para detalhes.
-
-## 🤝 Contribuindo
-
-Contribuições são bem-vindas! Veja como contribuir:
-
-1. Faça um fork do projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
-
-### Áreas que precisam de ajuda:
-- [ ] Testes automatizados
-- [ ] Documentação
-- [ ] OCR mais robusto
-- [ ] Suporte a formulários PDF
-- [ ] Interface gráfica desktop
-- [ ] API REST mais completa
-- [ ] Tradução para outros idiomas
-
-## 📞 Contato e Suporte
-
-- 📧 Email: community@pdfforge.org
-- 💬 Discord: [link do servidor]
-- 🐛 Issues: [GitHub Issues](https://github.com/pdfforge/pdfforge/issues)
-
-## 🙏 Agradecimentos
-
-A todos os contribuidores opensource que tornam este projeto possível!
+Contribuições são bem-vindas! Veja nosso [ROADMAP.md](ROADMAP.md) para funcionalidades planejadas.
 
 ---
 
-**PDFForge** - Transformando PDFs em dados úteis, de forma livre e acessível para todos. 🎉
+**Desenvolvido com ❤️ para a comunidade opensource**
