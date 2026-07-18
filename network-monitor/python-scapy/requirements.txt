@@ -1,0 +1,14 @@
+# Python dependencies for Network Monitor
+# ========================================
+
+# Core packet capture library
+scapy>=2.5.0
+
+# Optional: Enhanced packet analysis
+pyshark>=0.6
+
+# For async operations (optional)
+asyncio-compat>=0.1.0
+
+# Data processing
+python-dateutil>=2.8.0
